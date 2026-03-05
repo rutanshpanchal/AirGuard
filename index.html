@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AirGuard - Smart Environmental Monitoring</title>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+      color: white;
+    }
+
+    header {
+      text-align: center;
+      padding: 25px;
+      font-size: 32px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      background: rgba(0,0,0,0.3);
+    }
+
+    header span {
+      font-size: 16px;
+      display: block;
+      margin-top: 5px;
+      color: #00e6e6;
+    }
+
+    .dashboard {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.08);
+      backdrop-filter: blur(12px);
+      border-radius: 15px;
+      padding: 20px;
+      width: 250px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    }
+
+    .value {
+      font-size: 26px;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    .safe {
+      font-size: 14px;
+      margin-top: 5px;
+      color: #00ffcc;
+    }
+
+    .chart-container {
+      width: 92%;
+      max-width: 1000px;
+      margin: 30px auto;
+      background: rgba(255,255,255,0.08);
+      padding: 25px;
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+    }
+
+    .prediction-box{
+      text-align:center;
+      margin-top:15px;
+      font-size:18px;
+      color:#00ffcc;
+    }
+
+    .section {
+      width: 90%;
+      margin: 30px auto;
+      background: rgba(255,255,255,0.07);
+      padding: 20px;
+      border-radius: 15px;
+    }
+
+    .section h2 {
+      color: #00e6e6;
+      margin-bottom: 10px;
+    }
+
+    ul {
+      text-align: left;
+      line-height: 1.6;
+    }
+
+    .alert-banner {
+      display: none;
+      position: fixed;
+      top: 0;
+      width: 100%;
+      padding: 15px;
+      background: #e74c3c;
+      font-weight: bold;
+      text-align: center;
+      z-index: 9999;
+    }
+
+    /* Added Flash Animation */
+    @keyframes flashAlert{
+      0%{background:#e74c3c;}
+      50%{background:#ff0000;}
+      100%{background:#e74c3c;}
+    }
+
+    .alert-active{
+      animation:flashAlert 1s infinite;
+    }
+
+  </style>
+</head>
+
+<body>
+
+<!-- Added Alert Sound -->
+<audio id="alertSound" src="https://www.soundjay.com/buttons/beep-07.mp3" preload="auto"></audio>
+
+<div class="alert-banner" id="alertBanner">
+⚠️ AirGuard Alert: Unsafe Environmental Condition Detected!
+</div>
+
+<header>
+  🌍 AirGuard
+  <span>AI Powered Smart Environmental Monitoring System</span>
+</header>
+
+<div class="dashboard">
+
+  <div class="card">
+    🌡 Temperature
+    <div class="value" id="temperature">-- °C</div>
+    <div class="safe">Safe Range: 0 - 35 °C</div>
+  </div>
+
+  <div class="card">
+    💧 Humidity
+    <div class="value" id="humidity">-- %</div>
+    <div class="safe">Safe Range: 30% - 60%</div>
+  </div>
+
+  <div class="card">
+    🟤 CO
+    <div class="value" id="co">-- ppm</div>
+    <div class="safe">Safe Range: 0 - 95 ppm</div>
+  </div>
+
+  <div class="card">
+    📊 AQI
+    <div class="value" id="aqi">--</div>
+    <div class="safe">Safe Range: 0 - 50 (Good)</div>
+  </div>
+
+</div>
+
+<div class="chart-container">
+  <canvas id="airChart"></canvas>
+  <div class="prediction-box" id="predictionText">
+    AI Prediction: Waiting for data...
+  </div>
+</div>
+
+<!-- Precautions Section -->
+
+<div class="section">
+<h2>Temperature Control & Safety</h2>
+<ul>
+<li>Ensure proper ventilation</li>
+<li>Use air conditioning or cooling systems</li>
+<li>Stay hydrated</li>
+<li>Avoid prolonged exposure</li>
+<li>Install temperature control systems</li>
+<li>Use thermal insulation</li>
+<li>Monitor regularly with sensors</li>
+<li>Implement automated alerts</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>CO Safety & Control</h2>
+<ul>
+<li>Evacuate the area immediately</li>
+<li>Ensure proper ventilation</li>
+<li>Check for gas leaks</li>
+<li>Do not use combustion appliances</li>
+<li>Install CO detectors</li>
+<li>Regular maintenance of appliances</li>
+<li>Ensure proper exhaust systems</li>
+<li>Never use generators indoors</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Humidity Management</h2>
+<ul>
+<li>Use dehumidifiers or humidifiers</li>
+<li>Ensure proper ventilation</li>
+<li>Fix water leaks promptly</li>
+<li>Use moisture absorbers</li>
+<li>Monitor with hygrometers</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>AQI Improvement</h2>
+<ul>
+<li>Limit outdoor activities</li>
+<li>Use air purifiers indoors</li>
+<li>Wear protective masks</li>
+<li>Close windows and doors</li>
+<li>Use HEPA air filters</li>
+<li>Eliminate pollution sources</li>
+<li>Increase ventilation when outdoor AQI is good</li>
+<li>Regular monitoring and maintenance</li>
+</ul>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+
+const firebaseConfig = {
+    apiKey: "AIzaSyCa5wxrrDmRC7zQ8Y7I1z9l0wPgSu3E6lI",
+    authDomain: "airguard02.firebaseapp.com",
+    databaseURL: "https://airguard02-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "airgaurd02",
+    storageBucket: "airguard02.firebasestorage.app",
+    messagingSenderId: "151591026314",
+    appId: "1:151591026314:web:951b43d504f9f1c691b773"
+};
+
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+const ctx = document.getElementById("airChart").getContext("2d");
+
+const chart = new Chart(ctx, {
+type: "line",
+data: {
+  labels: [],
+  datasets: [
+    { label: "Temperature °C", data: [], borderColor:"#ff9f43" },
+    { label: "Humidity %", data: [], borderColor:"#00cec9" },
+    { label: "CO ppm", data: [], borderColor:"#fd79a8" },
+    { label: "AQI", data: [], borderColor:"#ff6b6b" },
+    { label: "Predicted AQI", data: [], borderColor:"#ffffff", borderDash:[5,5] }
+  ]
+},
+options: {
+  responsive:true,
+  animation:false,
+  scales:{
+    x:{ticks:{color:"white"}},
+    y:{ticks:{color:"white"}}
+  },
+  plugins:{legend:{labels:{color:"white"}}}
+}
+});
+
+let aqiHistory=[];
+
+function predictAQI(values){
+ if(values.length<5) return null;
+ let sum=0;
+ for(let i=values.length-5;i<values.length;i++){
+   sum+=values[i];
+ }
+ let avg=sum/5;
+ let trend=values[values.length-1]-values[values.length-2];
+ return avg+trend;
+}
+
+const dataRef = database.ref("devices/esp32/logs").limitToLast(20);
+
+dataRef.on("child_added", function(snapshot){
+
+const data = snapshot.val();
+const time = snapshot.key.split("_")[1];
+if(!data) return;
+
+const temp = Number(data.temperature);
+const hum = Number(data.humidity);
+const co = Number(data.co_ppm);
+const aqi = Number(data.estimated_aqi);
+
+document.getElementById("temperature").innerText = temp.toFixed(2)+" °C";
+document.getElementById("humidity").innerText = hum.toFixed(2)+" %";
+document.getElementById("co").innerText = co.toFixed(2)+" ppm";
+document.getElementById("aqi").innerText = aqi;
+
+chart.data.labels.push(time);
+chart.data.datasets[0].data.push(temp);
+chart.data.datasets[1].data.push(hum);
+chart.data.datasets[2].data.push(co);
+chart.data.datasets[3].data.push(aqi);
+
+aqiHistory.push(aqi);
+
+let predicted = predictAQI(aqiHistory);
+
+if(predicted){
+ chart.data.datasets[4].data.push(Number(predicted.toFixed(2)));
+ document.getElementById("predictionText").innerText =
+ "AI Prediction: Next AQI ≈ "+predicted.toFixed(2);
+}else{
+ chart.data.datasets[4].data.push(null);
+}
+
+if(chart.data.labels.length>20){
+ chart.data.labels.shift();
+ chart.data.datasets.forEach(ds=>ds.data.shift());
+ aqiHistory.shift();
+}
+
+chart.update();
+
+/* Updated Alert Logic */
+const banner = document.getElementById("alertBanner");
+const sound = document.getElementById("alertSound");
+
+if(co>95){
+ banner.style.display="block";
+ banner.classList.add("alert-active");
+ sound.play();
+}else{
+ banner.style.display="none";
+ banner.classList.remove("alert-active");
+}
+
+});
+
+});
+</script>
+
+</body>
+</html>
