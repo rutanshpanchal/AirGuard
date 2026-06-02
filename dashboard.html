@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>AirGuard Pro - Smart Environmental Monitoring</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #030d18;
+      --panel: rgba(0,220,255,0.04);
+      --border: rgba(0,220,255,0.15);
+      --cyan: #00dcff;
+      --green: #00ff9d;
+      --red: #ff3b5c;
+      --orange: #ff9a3c;
+      --yellow: #ffe45e;
+      --text: #c8eaf5;
+      --muted: #4a7a94;
+      --font-display: 'Orbitron', monospace;
+      --font-body: 'Rajdhani', sans-serif;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); font-family:var(--font-body); font-size:16px; min-height:100vh; overflow-x:hidden; }
+    body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(0,220,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,220,255,0.03) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
+    body.danger-mode::after { content:''; position:fixed; inset:0; background:radial-gradient(ellipse at center,rgba(255,59,92,0.08) 0%,transparent 70%); pointer-events:none; z-index:0; animation:dangerPulse 1.5s ease-in-out infinite; }
+    @keyframes dangerPulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
+
+    /* Alert Banner */
+    #alertBanner { display:none; position:fixed; top:0; left:0; right:0; z-index:9999; background:var(--red); color:white; text-align:center; padding:12px 20px; font-family:var(--font-display); font-size:14px; letter-spacing:2px; animation:flashBanner 1s infinite; }
+    @keyframes flashBanner { 0%,100%{background:#ff3b5c} 50%{background:#cc0022} }
+
+    /* Header */
+    header { position:relative; z-index:1; padding:28px 40px 20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:rgba(0,0,0,0.4); backdrop-filter:blur(10px); }
+    .logo { display:flex; align-items:center; gap:14px; }
+    .logo-icon { width:44px; height:44px; background:linear-gradient(135deg,var(--cyan),#0066ff); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow:0 0 20px rgba(0,220,255,0.4); }
+    .logo h1 { font-family:var(--font-display); font-size:22px; font-weight:900; letter-spacing:3px; color:white; }
+    .logo p { font-size:11px; color:var(--cyan); letter-spacing:2px; margin-top:2px; }
+    .header-right { display:flex; align-items:center; gap:16px; }
+    .live-badge { display:flex; align-items:center; gap:7px; background:rgba(0,255,157,0.1); border:1px solid rgba(0,255,157,0.3); padding:6px 14px; border-radius:20px; font-size:12px; font-family:var(--font-display); letter-spacing:1px; }
+    .live-dot { width:8px; height:8px; background:var(--green); border-radius:50%; box-shadow:0 0 8px var(--green); animation:blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    #lastUpdated { font-size:12px; color:var(--muted); font-family:var(--font-display); }
+
+    /* Device Bar */
+    .device-bar { position:relative; z-index:1; display:flex; align-items:center; gap:10px; padding:16px 40px; background:rgba(0,0,0,0.2); border-bottom:1px solid var(--border); overflow-x:auto; }
+    .device-bar-label { font-size:11px; letter-spacing:2px; color:var(--muted); font-family:var(--font-display); white-space:nowrap; }
+    .device-btn { padding:8px 18px; background:var(--panel); border:1px solid var(--border); border-radius:8px; color:var(--muted); font-family:var(--font-display); font-size:11px; letter-spacing:1px; cursor:pointer; transition:all 0.2s; white-space:nowrap; }
+    .device-btn:hover { border-color:var(--cyan); color:var(--cyan); }
+    .device-btn.active { background:rgba(0,220,255,0.12); border-color:var(--cyan); color:var(--cyan); box-shadow:0 0 12px rgba(0,220,255,0.2); }
+    .dev-status { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; background:var(--green); box-shadow:0 0 6px var(--green); }
+    .dev-status.offline { background:var(--muted); box-shadow:none; }
+
+    /* Main */
+    main { position:relative; z-index:1; padding:28px 40px; max-width:1400px; margin:0 auto; }
+
+    /* Risk Hero */
+    .risk-hero { display:flex; gap:24px; margin-bottom:28px; }
+    .risk-gauge-card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:28px 36px; display:flex; align-items:center; gap:32px; flex:0 0 auto; backdrop-filter:blur(8px); }
+    .gauge-wrap { position:relative; width:140px; height:140px; }
+    .gauge-svg { transform:rotate(-90deg); width:140px; height:140px; }
+    .gauge-bg { fill:none; stroke:rgba(255,255,255,0.06); stroke-width:10; }
+    .gauge-fill { fill:none; stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset 1s ease,stroke 0.5s; }
+    .gauge-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+    .gauge-score { font-family:var(--font-display); font-size:36px; font-weight:900; line-height:1; }
+    .gauge-label { font-size:10px; letter-spacing:1.5px; color:var(--muted); margin-top:4px; }
+    .risk-info h2 { font-family:var(--font-display); font-size:14px; letter-spacing:2px; color:var(--cyan); margin-bottom:8px; }
+    #riskLevel { font-family:var(--font-display); font-size:28px; font-weight:700; margin-bottom:6px; }
+    #riskDesc { font-size:14px; color:var(--muted); max-width:200px; line-height:1.5; }
+    .risk-recommendations { flex:1; background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:24px 28px; backdrop-filter:blur(8px); }
+    .risk-recommendations h3 { font-family:var(--font-display); font-size:12px; letter-spacing:2px; color:var(--cyan); margin-bottom:16px; }
+    .rec-list { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .rec-item { display:flex; align-items:flex-start; gap:10px; font-size:13px; color:var(--text); padding:10px 12px; background:rgba(0,0,0,0.2); border-radius:8px; border-left:3px solid var(--cyan); line-height:1.4; }
+    .rec-icon { font-size:16px; flex-shrink:0; margin-top:1px; }
+
+    /* Sensor Cards */
+    .sensor-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+    .sensor-card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:22px; backdrop-filter:blur(8px); position:relative; overflow:hidden; transition:border-color 0.3s,box-shadow 0.3s; }
+    .sensor-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--accent-color,var(--cyan)); box-shadow:0 0 12px var(--accent-color,var(--cyan)); }
+    .sensor-card.warning { border-color:rgba(255,154,60,0.5); box-shadow:0 0 20px rgba(255,154,60,0.1); --accent-color:var(--orange); }
+    .sensor-card.danger  { border-color:rgba(255,59,92,0.6);  box-shadow:0 0 25px rgba(255,59,92,0.15); --accent-color:var(--red); }
+    .sensor-card.safe    { --accent-color:var(--green); }
+    .sensor-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+    .sensor-name { font-family:var(--font-display); font-size:10px; letter-spacing:2px; color:var(--muted); }
+    .sensor-icon { font-size:24px; }
+
+    /* FIX: sensor value uses two separate elements, no innerHTML injection */
+    .sensor-value { font-family:var(--font-display); font-size:32px; font-weight:700; line-height:1; margin-bottom:6px; display:flex; align-items:baseline; gap:3px; }
+    .sensor-num { }
+    .sensor-unit { font-size:14px; font-weight:400; color:var(--muted); }
+
+    .sensor-bar-wrap { background:rgba(255,255,255,0.06); border-radius:4px; height:4px; margin:10px 0 8px; }
+    .sensor-bar { height:4px; border-radius:4px; background:var(--accent-color,var(--cyan)); box-shadow:0 0 8px var(--accent-color,var(--cyan)); transition:width 0.8s ease; }
+    .sensor-range { font-size:11px; color:var(--muted); }
+    .sensor-status { font-size:11px; font-family:var(--font-display); letter-spacing:1px; margin-top:4px; }
+
+    /* Stats */
+    .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+    .stat-card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:18px 20px; backdrop-filter:blur(8px); }
+    .stat-label { font-family:var(--font-display); font-size:10px; letter-spacing:2px; color:var(--muted); margin-bottom:8px; }
+    .stat-value { font-family:var(--font-display); font-size:22px; font-weight:700; }
+    .stat-sub { font-size:12px; color:var(--muted); margin-top:4px; }
+
+    /* Chart + AI */
+    .chart-section { display:grid; grid-template-columns:1fr 340px; gap:20px; margin-bottom:28px; }
+    .chart-card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:24px; backdrop-filter:blur(8px); }
+    .chart-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+    .chart-title { font-family:var(--font-display); font-size:12px; letter-spacing:2px; color:var(--cyan); }
+    .prediction-badge { background:rgba(255,228,94,0.1); border:1px solid rgba(255,228,94,0.3); color:var(--yellow); font-family:var(--font-display); font-size:10px; letter-spacing:1px; padding:5px 12px; border-radius:20px; }
+    .ai-panel { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:22px; backdrop-filter:blur(8px); display:flex; flex-direction:column; }
+    .ai-panel-header { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+    .ai-avatar { width:32px; height:32px; background:linear-gradient(135deg,var(--cyan),#0055ff); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+    .ai-panel-header h3 { font-family:var(--font-display); font-size:11px; letter-spacing:2px; color:var(--cyan); }
+    .ai-panel-header p { font-size:11px; color:var(--muted); }
+    .chat-messages { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; margin-bottom:14px; max-height:280px; min-height:120px; padding-right:4px; }
+    .chat-messages::-webkit-scrollbar { width:4px; }
+    .chat-messages::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+    .msg { padding:10px 14px; border-radius:10px; font-size:13px; line-height:1.5; }
+    .msg.ai { background:rgba(0,220,255,0.07); border:1px solid rgba(0,220,255,0.12); border-bottom-left-radius:2px; }
+    .msg.user { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-bottom-right-radius:2px; align-self:flex-end; color:var(--muted); }
+    .msg.loading { display:flex; gap:5px; align-items:center; }
+    .typing-dot { width:6px; height:6px; background:var(--cyan); border-radius:50%; animation:typingBounce 1.2s infinite; }
+    .typing-dot:nth-child(2){animation-delay:0.2s} .typing-dot:nth-child(3){animation-delay:0.4s}
+    @keyframes typingBounce { 0%,60%,100%{transform:translateY(0);opacity:0.4} 30%{transform:translateY(-5px);opacity:1} }
+    .chat-input-row { display:flex; gap:8px; }
+    .chat-input { flex:1; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-family:var(--font-body); font-size:13px; outline:none; transition:border-color 0.2s; }
+    .chat-input:focus { border-color:var(--cyan); }
+    .chat-send { background:rgba(0,220,255,0.15); border:1px solid var(--cyan); border-radius:8px; color:var(--cyan); padding:9px 14px; cursor:pointer; font-size:15px; }
+    .chat-send:hover { background:rgba(0,220,255,0.25); }
+    .quick-questions { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+    .quick-q { font-size:11px; padding:5px 10px; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:20px; cursor:pointer; color:var(--muted); transition:all 0.2s; }
+    .quick-q:hover { border-color:var(--cyan); color:var(--cyan); }
+
+    /* Actions */
+    .action-bar { display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap; }
+    .action-btn { display:flex; align-items:center; gap:8px; padding:10px 20px; border-radius:10px; font-family:var(--font-display); font-size:11px; letter-spacing:1.5px; cursor:pointer; transition:all 0.2s; border:1px solid var(--border); background:var(--panel); color:var(--text); }
+    .action-btn:hover { border-color:var(--cyan); color:var(--cyan); }
+    .action-btn.primary { border-color:var(--cyan); color:var(--cyan); background:rgba(0,220,255,0.08); }
+    .action-btn.primary:hover { background:rgba(0,220,255,0.18); }
+
+    /* ETA Banner — display set ONLY by JS */
+    .eta-banner { background:rgba(255,228,94,0.08); border:1px solid rgba(255,228,94,0.3); border-radius:12px; padding:14px 20px; margin-bottom:20px; align-items:center; gap:14px; }
+    .eta-icon { font-size:24px; }
+    .eta-text { flex:1; }
+    .eta-title { font-family:var(--font-display); font-size:11px; letter-spacing:2px; color:var(--yellow); }
+    .eta-value { font-family:var(--font-display); font-size:22px; font-weight:700; color:var(--yellow); }
+    .eta-sub { font-size:12px; color:var(--muted); }
+
+    /* Feature Tabs */
+    .feature-tabs { display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+    .ftab { padding:10px 18px; font-family:var(--font-display); font-size:10px; letter-spacing:1.5px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
+    .ftab:hover { color:var(--text); }
+    .ftab.active { color:var(--cyan); border-bottom-color:var(--cyan); }
+    .ftab-panel { display:none; }
+    .ftab-panel.active { display:block; }
+
+    /* Floor plan */
+    .heatmap-card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:24px; backdrop-filter:blur(8px); display:grid; grid-template-columns:1fr 280px; gap:24px; margin-bottom:28px; }
+    .floor-plan { position:relative; background:rgba(0,0,0,0.3); border-radius:12px; overflow:hidden; min-height:280px; border:1px solid rgba(0,220,255,0.1); }
+    .floor-plan svg { width:100%; height:100%; }
+    .room-label { font-family:var(--font-display); font-size:9px; letter-spacing:1px; fill:rgba(255,255,255,0.5); }
+    .room-value { font-family:var(--font-display); font-size:13px; font-weight:700; fill:white; }
+    .heatmap-legend { display:flex; flex-direction:column; gap:12px; justify-content:center; }
+    .heatmap-legend h4 { font-family:var(--font-display); font-size:10px; letter-spacing:2px; color:var(--muted); margin-bottom:4px; }
+    .legend-item { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text); }
+    .legend-dot { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+    .device-legend-row { padding:10px 14px; background:rgba(0,0,0,0.2); border-radius:8px; margin-bottom:6px; }
+    .device-legend-row .dev-name { font-family:var(--font-display); font-size:10px; letter-spacing:1px; color:var(--cyan); margin-bottom:4px; }
+    .device-legend-row .dev-readings { font-size:12px; color:var(--muted); }
+
+    /* AI Report */
+    .ai-report-card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:28px; backdrop-filter:blur(8px); margin-bottom:28px; }
+    .ai-report-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+    .ai-report-meta { display:flex; align-items:center; gap:12px; }
+    .ai-report-avatar { width:40px; height:40px; background:linear-gradient(135deg,var(--cyan),#0055ff); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 0 20px rgba(0,220,255,0.3); }
+    .ai-report-title { font-family:var(--font-display); font-size:13px; letter-spacing:2px; color:var(--cyan); }
+    .ai-report-sub { font-size:12px; color:var(--muted); margin-top:2px; }
+    .gen-report-btn { display:flex; align-items:center; gap:8px; padding:10px 22px; background:linear-gradient(135deg,rgba(0,220,255,0.15),rgba(0,85,255,0.15)); border:1px solid var(--cyan); border-radius:10px; color:var(--cyan); font-family:var(--font-display); font-size:11px; letter-spacing:1.5px; cursor:pointer; }
+    .gen-report-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    #aiReportContent { font-size:15px; line-height:1.8; color:var(--text); min-height:80px; }
+    .report-placeholder { color:var(--muted); font-style:italic; font-size:14px; }
+    .report-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:20px; }
+    .report-stat { background:rgba(0,0,0,0.2); border-radius:10px; padding:14px 16px; border-left:3px solid var(--cyan); }
+    .report-stat-label { font-family:var(--font-display); font-size:9px; letter-spacing:2px; color:var(--muted); margin-bottom:6px; }
+    .report-stat-val { font-family:var(--font-display); font-size:18px; font-weight:700; }
+
+    /* Compare */
+    .compare-card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:22px; backdrop-filter:blur(8px); margin-bottom:28px; }
+    .compare-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+    .compare-title { font-family:var(--font-display); font-size:12px; letter-spacing:2px; color:var(--cyan); }
+    .compare-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .compare-device-card { background:rgba(0,0,0,0.2); border-radius:12px; padding:18px; }
+    .compare-device-name { font-family:var(--font-display); font-size:11px; letter-spacing:2px; color:var(--cyan); margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+    .compare-metric { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid rgba(255,255,255,0.04); font-size:13px; }
+    .compare-metric-name { color:var(--muted); }
+    .compare-metric-val { font-family:var(--font-display); font-size:15px; font-weight:700; }
+    .better { color:var(--green) !important; }
+    .worse  { color:var(--red) !important; }
+
+    /* Broadcast */
+    .broadcast-card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:28px; backdrop-filter:blur(8px); margin-bottom:28px; }
+    .broadcast-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+    .broadcast-title { font-family:var(--font-display); font-size:12px; letter-spacing:2px; color:var(--cyan); }
+    #publicAlertCard { background:linear-gradient(135deg,#0a0a1a,#0f1a2e); border:2px solid var(--cyan); border-radius:20px; padding:32px; text-align:center; position:relative; overflow:hidden; }
+    #publicAlertCard::before { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 0%,rgba(0,220,255,0.06) 0%,transparent 60%); }
+    .alert-card-logo { font-family:var(--font-display); font-size:13px; letter-spacing:4px; color:var(--cyan); margin-bottom:20px; opacity:0.7; }
+    .alert-card-status { font-family:var(--font-display); font-size:36px; font-weight:900; margin-bottom:8px; }
+    .alert-card-location { font-size:14px; color:var(--muted); margin-bottom:24px; }
+    .alert-card-metrics { display:flex; justify-content:center; gap:32px; margin-bottom:20px; flex-wrap:wrap; }
+    .alert-card-metric-val { font-family:var(--font-display); font-size:22px; font-weight:700; }
+    .alert-card-metric-label { font-size:10px; color:var(--muted); letter-spacing:2px; margin-top:2px; }
+
+    /* Phone popup */
+    .phone-popup { position:fixed; top:70px; right:24px; z-index:8888; width:300px; background:#1a1a1e; border-radius:20px; padding:16px 18px; box-shadow:0 20px 60px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.08); transform:translateX(360px); transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+    .phone-popup.show { transform:translateX(0); }
+    .phone-popup-header { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .phone-app-icon { width:28px; height:28px; background:linear-gradient(135deg,#00dcff,#0055ff); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:14px; }
+    .phone-app-name { font-size:12px; color:#999; font-weight:600; }
+    .phone-time { margin-left:auto; font-size:11px; color:#666; }
+    .phone-title { font-size:14px; font-weight:700; color:white; margin-bottom:4px; }
+    .phone-body { font-size:13px; color:#aaa; line-height:1.4; }
+    .phone-actions { display:flex; gap:8px; margin-top:12px; }
+    .phone-action-btn { flex:1; padding:8px; background:rgba(255,255,255,0.08); border:none; border-radius:10px; color:#00dcff; font-size:12px; font-weight:600; cursor:pointer; }
+
+    footer { position:relative; z-index:1; text-align:center; padding:20px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); font-family:var(--font-display); letter-spacing:1px; }
+
+    @media (max-width:900px) {
+      header,main,.device-bar { padding-left:20px; padding-right:20px; }
+      .sensor-grid { grid-template-columns:repeat(2,1fr); }
+      .chart-section { grid-template-columns:1fr; }
+      .risk-hero { flex-direction:column; }
+      .rec-list { grid-template-columns:1fr; }
+      .stats-row { grid-template-columns:repeat(2,1fr); }
+      .heatmap-card,.compare-grid,.report-grid { grid-template-columns:1fr; }
+      .alert-card-metrics { gap:16px; }
+    }
+  </style>
+</head>
+<body>
+
+<audio id="alertSound" src="https://www.soundjay.com/buttons/beep-07.mp3" preload="auto"></audio>
+
+<!-- Phone Popup -->
+<div class="phone-popup" id="phonePopup">
+  <div class="phone-popup-header">
+    <div class="phone-app-icon">🌍</div>
+    <div class="phone-app-name">AirGuard</div>
+    <div class="phone-time" id="popupTime">now</div>
+  </div>
+  <div class="phone-title" id="popupTitle">⚠️ Air Quality Alert</div>
+  <div class="phone-body" id="popupBody">CO levels exceeded safe limit.</div>
+  <div class="phone-actions">
+    <button class="phone-action-btn" onclick="document.getElementById('phonePopup').classList.remove('show')">Dismiss</button>
+    <button class="phone-action-btn" onclick="document.getElementById('phonePopup').classList.remove('show');switchTab('aireport',document.querySelectorAll('.ftab')[1])">View Report</button>
+  </div>
+</div>
+
+<div id="alertBanner">⚠️ AIRGUARD CRITICAL ALERT — UNSAFE ENVIRONMENTAL CONDITION DETECTED — TAKE ACTION IMMEDIATELY</div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌍</div>
+    <div>
+      <h1>AIRGUARD</h1>
+      <p>AI POWERED ENVIRONMENTAL MONITORING SYSTEM</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="live-dot" id="liveDot"></div>
+      <span id="liveText">LIVE</span>
+    </div>
+    <div id="lastUpdated">—</div>
+  </div>
+</header>
+
+<div class="device-bar">
+  <span class="device-bar-label">DEVICES ·</span>
+  <button class="device-btn active" id="btn-esp32"        onclick="switchDevice('esp32',this)"><span class="dev-status"></span>ESP32-LAB-01</button>
+  <button class="device-btn"        id="btn-esp32_room2"  onclick="switchDevice('esp32_room2',this)"><span class="dev-status"></span>ESP32-ROOM-02</button>
+  <button class="device-btn"        id="btn-esp32_outdoor"onclick="switchDevice('esp32_outdoor',this)"><span class="dev-status"></span>ESP32-OUTDOOR</button>
+  <button class="device-btn"        id="btn-esp32_kitchen"onclick="switchDevice('esp32_kitchen',this)"><span class="dev-status offline"></span>ESP32-KITCHEN</button>
+</div>
+
+<main>
+
+  <!-- Risk Hero -->
+  <div class="risk-hero">
+    <div class="risk-gauge-card">
+      <div class="gauge-wrap">
+        <svg class="gauge-svg" viewBox="0 0 140 140">
+          <circle class="gauge-bg" cx="70" cy="70" r="54"/>
+          <circle class="gauge-fill" id="gaugeFill" cx="70" cy="70" r="54" stroke-dasharray="339.3" stroke-dashoffset="339.3" stroke="var(--green)"/>
+        </svg>
+        <div class="gauge-center">
+          <div class="gauge-score" id="riskScore">0</div>
+          <div class="gauge-label">RISK</div>
+        </div>
+      </div>
+      <div class="risk-info">
+        <h2>HEALTH RISK INDEX</h2>
+        <div id="riskLevel" style="color:var(--green)">SAFE</div>
+        <div id="riskDesc">All environmental parameters within acceptable limits.</div>
+      </div>
+    </div>
+    <div class="risk-recommendations">
+      <h3>⚡ LIVE RECOMMENDATIONS</h3>
+      <div class="rec-list" id="recList">
+        <div class="rec-item"><span class="rec-icon">✅</span>All readings normal. No action required.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sensor Cards — FIX: values use data-num span, unit span, never innerHTML -->
+  <div class="sensor-grid">
+    <div class="sensor-card safe" id="cardTemp">
+      <div class="sensor-top"><div class="sensor-name">TEMPERATURE</div><div class="sensor-icon">🌡</div></div>
+      <div class="sensor-value"><span class="sensor-num" id="valTemp">--</span><span class="sensor-unit">°C</span></div>
+      <div class="sensor-bar-wrap"><div class="sensor-bar" id="barTemp" style="width:0%"></div></div>
+      <div class="sensor-range">Safe: 0–35 °C</div>
+      <div class="sensor-status" id="statusTemp" style="color:var(--green)">● NORMAL</div>
+    </div>
+    <div class="sensor-card safe" id="cardHum">
+      <div class="sensor-top"><div class="sensor-name">HUMIDITY</div><div class="sensor-icon">💧</div></div>
+      <div class="sensor-value"><span class="sensor-num" id="valHum">--</span><span class="sensor-unit">%</span></div>
+      <div class="sensor-bar-wrap"><div class="sensor-bar" id="barHum" style="width:0%"></div></div>
+      <div class="sensor-range">Safe: 30–60%</div>
+      <div class="sensor-status" id="statusHum" style="color:var(--green)">● NORMAL</div>
+    </div>
+    <div class="sensor-card safe" id="cardCO">
+      <div class="sensor-top"><div class="sensor-name">CARBON MONOXIDE</div><div class="sensor-icon">🟤</div></div>
+      <div class="sensor-value"><span class="sensor-num" id="valCO">--</span><span class="sensor-unit">ppm</span></div>
+      <div class="sensor-bar-wrap"><div class="sensor-bar" id="barCO" style="width:0%"></div></div>
+      <div class="sensor-range">Safe: 0–95 ppm</div>
+      <div class="sensor-status" id="statusCO" style="color:var(--green)">● NORMAL</div>
+    </div>
+    <div class="sensor-card safe" id="cardAQI">
+      <div class="sensor-top"><div class="sensor-name">AIR QUALITY INDEX</div><div class="sensor-icon">📊</div></div>
+      <div class="sensor-value"><span class="sensor-num" id="valAQI">--</span><span class="sensor-unit">AQI</span></div>
+      <div class="sensor-bar-wrap"><div class="sensor-bar" id="barAQI" style="width:0%"></div></div>
+      <div class="sensor-range">Safe: 0–50</div>
+      <div class="sensor-status" id="statusAQI" style="color:var(--green)">● GOOD</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">SESSION READINGS</div><div class="stat-value" id="statReadings" style="color:var(--cyan)">0</div><div class="stat-sub">data points collected</div></div>
+    <div class="stat-card"><div class="stat-label">AVG TEMPERATURE</div><div class="stat-value" id="statAvgTemp" style="color:var(--orange)">--</div><div class="stat-sub">°C this session</div></div>
+    <div class="stat-card"><div class="stat-label">PEAK AQI</div><div class="stat-value" id="statPeakAQI" style="color:var(--red)">--</div><div class="stat-sub">highest recorded</div></div>
+    <div class="stat-card"><div class="stat-label">ALERTS FIRED</div><div class="stat-value" id="statAlerts" style="color:var(--yellow)">0</div><div class="stat-sub">this session</div></div>
+  </div>
+
+  <!-- Chart + AI Chat -->
+  <div class="chart-section">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">📈 REAL-TIME SENSOR HISTORY</div>
+        <div class="prediction-badge" id="predBadge">🤖 AI PREDICTION: WAITING...</div>
+      </div>
+      <canvas id="airChart" height="100"></canvas>
+    </div>
+    <div class="ai-panel">
+      <div class="ai-panel-header">
+        <div class="ai-avatar">🤖</div>
+        <div><h3>AIRGUARD AI ASSISTANT</h3><p>Ask about your air quality</p></div>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="msg ai">👋 Hi! I'm your AirGuard AI. Ask me anything about your readings, health risks, or what to do right now.</div>
+      </div>
+      <div class="quick-questions">
+        <div class="quick-q" onclick="askQuick('Is the air safe to breathe?')">Safe to breathe?</div>
+        <div class="quick-q" onclick="askQuick('What does the current AQI mean?')">AQI meaning?</div>
+        <div class="quick-q" onclick="askQuick('Is CO level dangerous?')">CO dangerous?</div>
+        <div class="quick-q" onclick="askQuick('What should I do right now?')">What to do?</div>
+      </div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="chatInput" placeholder="Ask AI assistant..." onkeydown="if(event.key==='Enter')sendChat()"/>
+        <button class="chat-send" onclick="sendChat()">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="action-bar">
+    <button class="action-btn primary" onclick="exportCSV()">📥 EXPORT CSV</button>
+    <button class="action-btn" onclick="exportJSON()">📄 EXPORT JSON</button>
+    <button class="action-btn" onclick="window.print()">🖨 PRINT REPORT</button>
+    <button class="action-btn" onclick="shareStatus()">🔗 SHARE STATUS</button>
+  </div>
+
+  <!-- ETA Banner — display only via JS -->
+  <div class="eta-banner" id="etaBanner" style="display:none">
+    <div class="eta-icon">⏱</div>
+    <div class="eta-text">
+      <div class="eta-title">PREDICTIVE DANGER ETA</div>
+      <div class="eta-value" id="etaValue">--</div>
+      <div class="eta-sub" id="etaSub">Based on current CO trend</div>
+    </div>
+  </div>
+
+  <!-- Feature Tabs -->
+  <div class="feature-tabs">
+    <div class="ftab active" onclick="switchTab('floorplan',this)">🗺 FLOOR MAP</div>
+    <div class="ftab" onclick="switchTab('aireport',this)">🧠 AI TREND REPORT</div>
+    <div class="ftab" onclick="switchTab('compare',this)">⚖ COMPARE DEVICES</div>
+    <div class="ftab" onclick="switchTab('broadcast',this)">📢 PUBLIC BROADCAST</div>
+  </div>
+
+  <!-- FLOOR MAP -->
+  <div class="ftab-panel active" id="tab-floorplan">
+    <div class="heatmap-card">
+      <div class="floor-plan">
+        <svg viewBox="0 0 500 280" xmlns="http://www.w3.org/2000/svg">
+          <rect x="10" y="10" width="480" height="260" rx="8" fill="rgba(0,0,0,0.4)" stroke="rgba(0,220,255,0.2)" stroke-width="1.5"/>
+          <rect id="room-esp32"         x="20"  y="20" width="200" height="140" rx="6" fill="rgba(0,255,157,0.12)"  stroke="rgba(0,255,157,0.3)"  stroke-width="1.5"/>
+          <rect id="room-esp32_room2"   x="230" y="20" width="120" height="140" rx="6" fill="rgba(0,220,255,0.08)"  stroke="rgba(0,220,255,0.2)"  stroke-width="1.5"/>
+          <rect id="room-esp32_outdoor" x="360" y="20" width="120" height="140" rx="6" fill="rgba(255,154,60,0.08)" stroke="rgba(255,154,60,0.2)" stroke-width="1.5"/>
+          <rect x="20" y="170" width="460" height="90" rx="6" fill="rgba(100,100,100,0.06)" stroke="rgba(100,100,100,0.2)" stroke-width="1.5" stroke-dasharray="6,3"/>
+          <text x="120" y="72"  text-anchor="middle" class="room-label">ESP32-LAB-01</text>
+          <text x="120" y="94"  text-anchor="middle" class="room-value" id="roomVal-esp32">-- AQI</text>
+          <text x="120" y="112" text-anchor="middle" class="room-label" id="roomTmp-esp32">-- °C</text>
+          <text x="290" y="72"  text-anchor="middle" class="room-label">ROOM-02</text>
+          <text x="290" y="94"  text-anchor="middle" class="room-value" id="roomVal-esp32_room2">-- AQI</text>
+          <text x="290" y="112" text-anchor="middle" class="room-label" id="roomTmp-esp32_room2">-- °C</text>
+          <text x="420" y="72"  text-anchor="middle" class="room-label">OUTDOOR</text>
+          <text x="420" y="94"  text-anchor="middle" class="room-value" id="roomVal-esp32_outdoor">-- AQI</text>
+          <text x="420" y="112" text-anchor="middle" class="room-label" id="roomTmp-esp32_outdoor">-- °C</text>
+          <text x="250" y="220" text-anchor="middle" class="room-label">KITCHEN (OFFLINE)</text>
+          <defs>
+            <radialGradient id="heatLab"     cx="50%" cy="50%"><stop offset="0%" stop-color="rgba(0,255,157,0.25)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
+            <radialGradient id="heatRoom2"   cx="50%" cy="50%"><stop offset="0%" stop-color="rgba(0,220,255,0.2)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
+            <radialGradient id="heatOutdoor" cx="50%" cy="50%"><stop offset="0%" stop-color="rgba(255,154,60,0.25)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
+          </defs>
+          <ellipse cx="120" cy="90" rx="90" ry="60" fill="url(#heatLab)"     opacity="0.8"/>
+          <ellipse cx="290" cy="90" rx="55" ry="55" fill="url(#heatRoom2)"   opacity="0.8"/>
+          <ellipse cx="420" cy="90" rx="55" ry="55" fill="url(#heatOutdoor)" opacity="0.8"/>
+        </svg>
+      </div>
+      <div class="heatmap-legend">
+        <h4>DEVICE READINGS</h4>
+        <div class="device-legend-row"><div class="dev-name">● ESP32-LAB-01</div><div class="dev-readings" id="legend-esp32">Waiting for data...</div></div>
+        <div class="device-legend-row"><div class="dev-name">● ESP32-ROOM-02</div><div class="dev-readings" id="legend-esp32_room2">Loading...</div></div>
+        <div class="device-legend-row"><div class="dev-name">● ESP32-OUTDOOR</div><div class="dev-readings" id="legend-esp32_outdoor">Loading...</div></div>
+        <div class="device-legend-row" style="opacity:0.4"><div class="dev-name" style="color:var(--muted)">○ KITCHEN</div><div class="dev-readings">OFFLINE</div></div>
+        <div style="margin-top:12px">
+          <h4>AQI SCALE</h4>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>0–50 Good</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>51–100 Moderate</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div>101–150 Unhealthy</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>150+ Hazardous</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI TREND REPORT -->
+  <div class="ftab-panel" id="tab-aireport">
+    <div class="ai-report-card">
+      <div class="ai-report-header">
+        <div class="ai-report-meta">
+          <div class="ai-report-avatar">🧠</div>
+          <div><div class="ai-report-title">AI ENVIRONMENTAL TREND ANALYSIS</div><div class="ai-report-sub">Powered by Claude · Analyzes last 20 readings</div></div>
+        </div>
+        <button class="gen-report-btn" id="genReportBtn" onclick="generateAIReport()">⚡ GENERATE REPORT</button>
+      </div>
+      <div id="aiReportContent"><div class="report-placeholder">Click "Generate Report" to get a deep AI analysis of your environmental trends, anomalies, and health impact assessment.</div></div>
+      <div class="report-grid" id="reportGrid" style="display:none">
+        <div class="report-stat"><div class="report-stat-label">TREND DIRECTION</div><div class="report-stat-val" id="rTrend" style="color:var(--cyan)">—</div></div>
+        <div class="report-stat"><div class="report-stat-label">ANOMALIES DETECTED</div><div class="report-stat-val" id="rAnomalies" style="color:var(--yellow)">—</div></div>
+        <div class="report-stat"><div class="report-stat-label">SAFETY VERDICT</div><div class="report-stat-val" id="rVerdict" style="color:var(--green)">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPARE -->
+  <div class="ftab-panel" id="tab-compare">
+    <div class="compare-card">
+      <div class="compare-header">
+        <div class="compare-title">⚖ SIDE-BY-SIDE DEVICE COMPARISON</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <select id="compareA" class="chat-input" style="width:160px;padding:6px 10px" onchange="renderCompare()">
+            <option value="esp32">LAB-01 (Live)</option>
+            <option value="esp32_room2">ROOM-02</option>
+            <option value="esp32_outdoor">OUTDOOR</option>
+          </select>
+          <span style="color:var(--muted);font-family:var(--font-display);font-size:12px">VS</span>
+          <select id="compareB" class="chat-input" style="width:160px;padding:6px 10px" onchange="renderCompare()">
+            <option value="esp32_room2">ROOM-02</option>
+            <option value="esp32">LAB-01 (Live)</option>
+            <option value="esp32_outdoor">OUTDOOR</option>
+          </select>
+        </div>
+      </div>
+      <div class="compare-grid">
+        <div class="compare-device-card" id="compareCardA"></div>
+        <div class="compare-device-card" id="compareCardB"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BROADCAST -->
+  <div class="ftab-panel" id="tab-broadcast">
+    <div class="broadcast-card">
+      <div class="broadcast-header">
+        <div class="broadcast-title">📢 PUBLIC SAFETY BROADCAST CARD</div>
+        <div style="display:flex;gap:10px">
+          <button class="action-btn primary" onclick="copyBroadcast()">📋 COPY TEXT</button>
+          <button class="action-btn" onclick="downloadCard()">🖼 SAVE CARD</button>
+        </div>
+      </div>
+      <div id="publicAlertCard">
+        <div class="alert-card-logo">⬡ AIRGUARD ENVIRONMENTAL MONITORING</div>
+        <div class="alert-card-status" id="cardStatus" style="color:var(--green)">✅ AIR QUALITY: SAFE</div>
+        <div class="alert-card-location" id="cardLocation">📍 ESP32-LAB-01 · Last updated: —</div>
+        <div class="alert-card-metrics">
+          <div><div class="alert-card-metric-val" id="cardTempB">--°C</div><div class="alert-card-metric-label">TEMPERATURE</div></div>
+          <div><div class="alert-card-metric-val" id="cardHumB">--%</div><div class="alert-card-metric-label">HUMIDITY</div></div>
+          <div><div class="alert-card-metric-val" id="cardCOB">-- ppm</div><div class="alert-card-metric-label">CO LEVEL</div></div>
+          <div><div class="alert-card-metric-val" id="cardAQIB">--</div><div class="alert-card-metric-label">AQI</div></div>
+          <div><div class="alert-card-metric-val" id="cardRiskB" style="color:var(--green)">--/100</div><div class="alert-card-metric-label">RISK SCORE</div></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);letter-spacing:1px">Generated by AirGuard Pro</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+<footer>AIRGUARD PRO · AI-POWERED ENVIRONMENTAL MONITORING · REAL-TIME FIREBASE SYNC</footer>
+
+<script>
+// ═══════════════════════════════════════
+// FIREBASE — exact same config & pattern
+// from the original working code
+// ═══════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyCa5wxrrDmRC7zQ8Y7I1z9l0wPgSu3E6lI",
+  authDomain: "airguard02.firebaseapp.com",
+  databaseURL: "https://airguard02-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "airgaurd02",
+  storageBucket: "airguard02.firebasestorage.app",
+  messagingSenderId: "151591026314",
+  appId: "1:151591026314:web:951b43d504f9f1c691b773"
+};
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+// ═══════════════════════════════════════
+// DUMMY DEVICES (for non-live devices)
+// ═══════════════════════════════════════
+const dummyDevices = {
+  esp32_room2:   { baseline:{temperature:26.5, humidity:52, co_ppm:18, estimated_aqi:35},  variance:{temperature:2, humidity:8, co_ppm:10, estimated_aqi:15} },
+  esp32_outdoor: { baseline:{temperature:32,   humidity:65, co_ppm:45, estimated_aqi:78},  variance:{temperature:4, humidity:12,co_ppm:20, estimated_aqi:30} },
+  esp32_kitchen: { baseline: null }
+};
+function genDummy(key) {
+  const d = dummyDevices[key];
+  if (!d || !d.baseline) return null;
+  const r = (b,v) => b + (Math.random()-0.5)*v*2;
+  return {
+    temperature:   +r(d.baseline.temperature,  d.variance.temperature ).toFixed(2),
+    humidity:      +r(d.baseline.humidity,      d.variance.humidity    ).toFixed(2),
+    co_ppm:   +Math.max(0, r(d.baseline.co_ppm,     d.variance.co_ppm    )).toFixed(2),
+    estimated_aqi: Math.max(0, Math.round(r(d.baseline.estimated_aqi, d.variance.estimated_aqi)))
+  };
+}
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let currentDevice = 'esp32';
+let session = { readings:0, tempSum:0, peakAQI:0, alerts:0 };
+let allData  = [];
+let aqiHist  = [];
+let dummyTimer = null;
+
+// Stores last known snapshot per device for compare/floor map
+const roomSnaps = {};
+
+const deviceNames = {
+  esp32:'ESP32-LAB-01', esp32_room2:'ESP32-ROOM-02',
+  esp32_outdoor:'ESP32-OUTDOOR', esp32_kitchen:'ESP32-KITCHEN'
+};
+
+// ═══════════════════════════════════════
+// CHART
+// ═══════════════════════════════════════
+const chart = new Chart(document.getElementById('airChart').getContext('2d'), {
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[
+      {label:'Temp °C',       data:[], borderColor:'#ff9a3c', backgroundColor:'rgba(255,154,60,0.05)',  tension:0.4, pointRadius:2},
+      {label:'Humidity %',    data:[], borderColor:'#00dcff', backgroundColor:'rgba(0,220,255,0.05)',   tension:0.4, pointRadius:2},
+      {label:'CO ppm',        data:[], borderColor:'#ff3b5c', backgroundColor:'rgba(255,59,92,0.05)',   tension:0.4, pointRadius:2},
+      {label:'AQI',           data:[], borderColor:'#ffe45e', backgroundColor:'rgba(255,228,94,0.05)',  tension:0.4, pointRadius:2},
+      {label:'Predicted AQI', data:[], borderColor:'rgba(255,255,255,0.5)', borderDash:[5,5], tension:0.4, pointRadius:0}
+    ]
+  },
+  options:{
+    responsive:true, animation:false,
+    interaction:{intersect:false,mode:'index'},
+    scales:{
+      x:{ticks:{color:'#4a7a94',font:{family:'Rajdhani',size:11}},grid:{color:'rgba(0,220,255,0.04)'}},
+      y:{ticks:{color:'#4a7a94',font:{family:'Rajdhani',size:11}},grid:{color:'rgba(0,220,255,0.06)'}}
+    },
+    plugins:{legend:{labels:{color:'#c8eaf5',font:{family:'Rajdhani',size:12}}}}
+  }
+});
+
+// ═══════════════════════════════════════
+// RISK
+// ═══════════════════════════════════════
+function calcRisk(temp,hum,co,aqi) {
+  let s=0;
+  if(temp>35)s+=20; else if(temp>30)s+=10;
+  if(hum>70||hum<25)s+=15; else if(hum>60||hum<30)s+=7;
+  if(co>95)s+=40; else if(co>50)s+=20; else if(co>25)s+=10;
+  if(aqi>150)s+=40; else if(aqi>100)s+=25; else if(aqi>50)s+=12;
+  return Math.min(s,100);
+}
+function updateGauge(score) {
+  const fill = document.getElementById('gaugeFill');
+  fill.style.strokeDashoffset = 339.3 - (score/100)*339.3;
+  let c,l,d;
+  if(score<20)      {c='var(--green)'; l='SAFE';      d='All parameters within safe limits.';}
+  else if(score<40) {c='var(--cyan)';  l='LOW RISK';  d='Minor deviations detected. Monitor closely.';}
+  else if(score<60) {c='var(--yellow)';l='MODERATE';  d='Some parameters out of range. Take precautions.';}
+  else if(score<80) {c='var(--orange)';l='HIGH RISK'; d='Multiple unsafe readings. Act now.';}
+  else              {c='var(--red)';   l='CRITICAL';  d='🚨 Dangerous! Evacuate or ventilate immediately.';}
+  fill.style.stroke=c;
+  document.getElementById('riskScore').textContent=score; document.getElementById('riskScore').style.color=c;
+  document.getElementById('riskLevel').textContent=l;     document.getElementById('riskLevel').style.color=c;
+  document.getElementById('riskDesc').textContent=d;
+}
+function updateRecs(temp,hum,co,aqi) {
+  const r=[];
+  if(co>95)         r.push({i:'🚨',t:'CO critical! Evacuate & ventilate now'});
+  else if(co>50)    r.push({i:'⚠️',t:'Elevated CO. Open windows immediately'});
+  if(aqi>150)       r.push({i:'😷',t:'Wear N95 mask — air quality hazardous'});
+  else if(aqi>100)  r.push({i:'🪟',t:'Use air purifier, limit outdoor exposure'});
+  if(temp>35)       r.push({i:'🌡',t:'High temp! Use AC, stay hydrated'});
+  if(hum>70)        r.push({i:'💧',t:'High humidity — use dehumidifier'});
+  else if(hum<25)   r.push({i:'🏜',t:'Very dry air — use a humidifier'});
+  if(!r.length)     r.push({i:'✅',t:'All clear. No immediate action needed.'});
+  document.getElementById('recList').innerHTML = r.map(x=>`<div class="rec-item"><span class="rec-icon">${x.i}</span>${x.t}</div>`).join('');
+}
+
+// ═══════════════════════════════════════
+// SENSOR CARD
+// ═══════════════════════════════════════
+function updateCard(cid,bid,sid,val,max,safe,warn) {
+  const card=document.getElementById(cid), bar=document.getElementById(bid), stat=document.getElementById(sid);
+  bar.style.width = Math.min((val/max)*100,100)+'%';
+  if(val>warn)       {card.className='sensor-card danger';  stat.textContent='● DANGER';  stat.style.color='var(--red)';}
+  else if(val>safe)  {card.className='sensor-card warning'; stat.textContent='● WARNING'; stat.style.color='var(--orange)';}
+  else               {card.className='sensor-card safe';    stat.textContent='● NORMAL';  stat.style.color='var(--green)';}
+}
+
+// ═══════════════════════════════════════
+// MAIN DATA PROCESSOR
+// Receives one data point, updates entire UI
+// ═══════════════════════════════════════
+function processDataPoint(data, label) {
+  if (!data) return;
+
+  // Parse — handle both string and number values from Firebase
+  const temp = parseFloat(data.temperature);
+  const hum  = parseFloat(data.humidity);
+  const co   = parseFloat(data.co_ppm);
+  const aqi  = parseInt(data.estimated_aqi);
+
+  // Guard against NaN (missing fields)
+  if (isNaN(temp) || isNaN(hum) || isNaN(co) || isNaN(aqi)) {
+    console.warn('AirGuard: incomplete data point', data);
+    return;
+  }
+
+  // FIX: update number span only — never touch the unit span
+  document.getElementById('valTemp').textContent = temp.toFixed(1);
+  document.getElementById('valHum').textContent  = hum.toFixed(1);
+  document.getElementById('valCO').textContent   = co.toFixed(1);
+  document.getElementById('valAQI').textContent  = aqi;
+
+  updateCard('cardTemp','barTemp','statusTemp', temp, 50,  35,  45);
+  updateCard('cardHum', 'barHum', 'statusHum',  hum,  100, 60,  70);
+  updateCard('cardCO',  'barCO',  'statusCO',   co,   300, 95,  150);
+  updateCard('cardAQI', 'barAQI', 'statusAQI',  aqi,  300, 50,  100);
+
+  const risk = calcRisk(temp,hum,co,aqi);
+  updateGauge(risk);
+  updateRecs(temp,hum,co,aqi);
+
+  // Chart
+  chart.data.labels.push(label);
+  chart.data.datasets[0].data.push(temp);
+  chart.data.datasets[1].data.push(hum);
+  chart.data.datasets[2].data.push(co);
+  chart.data.datasets[3].data.push(aqi);
+  aqiHist.push(aqi);
+  const pred = aqiHist.length >= 5
+    ? (aqiHist.slice(-5).reduce((a,b)=>a+b,0)/5) + (aqiHist.at(-1)-aqiHist.at(-2))
+    : null;
+  chart.data.datasets[4].data.push(pred ? +pred.toFixed(1) : null);
+  if(chart.data.labels.length>20){chart.data.labels.shift();chart.data.datasets.forEach(ds=>ds.data.shift());aqiHist.shift();}
+  chart.update();
+  if(pred) document.getElementById('predBadge').textContent=`🤖 AI PREDICTED NEXT AQI: ${pred.toFixed(1)}`;
+
+  // Session stats
+  session.readings++;
+  session.tempSum += temp;
+  if(aqi>session.peakAQI) session.peakAQI=aqi;
+  document.getElementById('statReadings').textContent = session.readings;
+  document.getElementById('statAvgTemp').textContent  = (session.tempSum/session.readings).toFixed(1);
+  document.getElementById('statPeakAQI').textContent  = session.peakAQI;
+
+  allData.push({time:label,temperature:temp,humidity:hum,co_ppm:co,estimated_aqi:aqi,risk});
+  document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+
+  // Alerts
+  if(co>95) {
+    document.getElementById('alertBanner').style.display='block';
+    document.body.classList.add('danger-mode');
+    session.alerts++;
+    document.getElementById('statAlerts').textContent=session.alerts;
+    try{document.getElementById('alertSound').play();}catch(e){}
+    triggerPopup('⚠️ CO CRITICAL',`CO: ${co.toFixed(1)} ppm — Evacuate immediately!`);
+  } else {
+    document.getElementById('alertBanner').style.display='none';
+    document.body.classList.remove('danger-mode');
+    if(aqi>100) triggerPopup('🌫 Poor Air Quality',`AQI: ${aqi} — Consider an air purifier.`);
+  }
+
+  // Floor map
+  updateRoom(currentDevice, {temperature:temp, humidity:hum, co_ppm:co, estimated_aqi:aqi});
+
+  // Broadcast card
+  updateBroadcast({temperature:temp, humidity:hum, co_ppm:co, estimated_aqi:aqi, risk});
+
+  // ETA
+  updateETA();
+}
+
+// ═══════════════════════════════════════
+// DEVICE SWITCHING
+// — stops current source, resets state,
+//   starts the right new source
+// ═══════════════════════════════════════
+let firebaseListener = null;  // holds the active ref so we can .off() it
+
+function switchDevice(key, btn) {
+  // 1. Stop everything currently running
+  if (dummyTimer)        { clearInterval(dummyTimer); dummyTimer = null; }
+  if (firebaseListener)  { firebaseListener.off(); firebaseListener = null; }
+
+  // 2. Update active button
+  document.querySelectorAll('.device-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentDevice = key;
+
+  // 3. Reset chart & stats
+  chart.data.labels=[];
+  chart.data.datasets.forEach(ds=>ds.data=[]);
+  chart.update();
+  aqiHist=[];
+  allData=[];
+  session={readings:0,tempSum:0,peakAQI:0,alerts:0};
+  document.getElementById('statReadings').textContent='0';
+  document.getElementById('statAvgTemp').textContent='--';
+  document.getElementById('statPeakAQI').textContent='--';
+  document.getElementById('statAlerts').textContent='0';
+  document.getElementById('predBadge').textContent='🤖 AI PREDICTION: WAITING...';
+  document.getElementById('etaBanner').style.display='none';
+  document.getElementById('alertBanner').style.display='none';
+  document.body.classList.remove('danger-mode');
+
+  // 4. Start new source
+  if (key === 'esp32') {
+    startFirebase();
+  } else if (dummyDevices[key]?.baseline) {
+    startDummy(key);
+  } else {
+    // Offline
+    ['valTemp','valHum','valCO','valAQI'].forEach(id=>document.getElementById(id).textContent='--');
+    updateGauge(0);
+    document.getElementById('lastUpdated').textContent='OFFLINE';
+  }
+}
+
+// ═══════════════════════════════════════
+// FIREBASE LISTENER
+// Same simple pattern as original working
+// code — limitToLast(20) + child_added
+// ═══════════════════════════════════════
+function startFirebase() {
+  firebaseListener = database.ref("devices/esp32/logs").limitToLast(20);
+  firebaseListener.on("child_added", function(snapshot) {
+    if (currentDevice !== 'esp32') return;  // guard: ignore if switched away
+    const data = snapshot.val();
+    if (!data) return;
+    // Time label: try key split, fall back to clock
+    const parts = snapshot.key.split("_");
+    const label = parts.length > 1 ? parts[1] : new Date().toLocaleTimeString();
+    processDataPoint(data, label);
+  });
+}
+
+// ═══════════════════════════════════════
+// DUMMY DEVICE
+// ═══════════════════════════════════════
+function startDummy(key) {
+  const tick = () => {
+    const d = genDummy(key);
+    if (d) processDataPoint(d, new Date().toLocaleTimeString());
+  };
+  tick();
+  dummyTimer = setInterval(tick, 8000);
+}
+
+// ═══════════════════════════════════════
+// FLOOR MAP
+// ═══════════════════════════════════════
+function updateRoom(key, data) {
+  roomSnaps[key] = {...data};
+  const aqi = data.estimated_aqi, temp = data.temperature, co = data.co_ppm;
+  const vEl = document.getElementById('roomVal-'+key);
+  const tEl = document.getElementById('roomTmp-'+key);
+  const lEl = document.getElementById('legend-'+key);
+  const rEl = document.getElementById('room-'+key);
+  if(vEl) vEl.textContent = aqi+' AQI';
+  if(tEl) tEl.textContent = (+temp).toFixed(1)+'°C';
+  if(lEl) lEl.textContent = `AQI: ${aqi} · CO: ${(+co).toFixed(0)}ppm · ${(+temp).toFixed(1)}°C`;
+  let fill,stroke;
+  if(aqi<=50)       {fill='rgba(0,255,157,0.15)';  stroke='rgba(0,255,157,0.4)';}
+  else if(aqi<=100) {fill='rgba(255,228,94,0.12)'; stroke='rgba(255,228,94,0.4)';}
+  else if(aqi<=150) {fill='rgba(255,154,60,0.14)'; stroke='rgba(255,154,60,0.5)';}
+  else              {fill='rgba(255,59,92,0.15)';  stroke='rgba(255,59,92,0.6)';}
+  if(rEl){rEl.style.fill=fill; rEl.style.stroke=stroke;}
+}
+function initRooms() {
+  ['esp32_room2','esp32_outdoor'].forEach(key=>{
+    const d=genDummy(key); if(d) updateRoom(key,d);
+    setInterval(()=>{const f=genDummy(key);if(f)updateRoom(key,f);}, 9000+Math.random()*3000);
+  });
+}
+
+// ═══════════════════════════════════════
+// BROADCAST CARD
+// ═══════════════════════════════════════
+function updateBroadcast(d) {
+  const risk=d.risk??calcRisk(d.temperature,d.humidity,d.co_ppm,d.estimated_aqi);
+  let s,c;
+  if(risk<20)     {s='✅ AIR QUALITY: SAFE';      c='var(--green)';}
+  else if(risk<40){s='🔵 AIR QUALITY: FAIR';      c='var(--cyan)';}
+  else if(risk<60){s='⚠️ AIR QUALITY: MODERATE';  c='var(--yellow)';}
+  else if(risk<80){s='🟠 AIR QUALITY: POOR';      c='var(--orange)';}
+  else            {s='🔴 AIR QUALITY: HAZARDOUS'; c='var(--red)';}
+  document.getElementById('cardStatus').textContent=s;
+  document.getElementById('cardStatus').style.color=c;
+  document.getElementById('cardLocation').textContent=`📍 ${deviceNames[currentDevice]} · ${new Date().toLocaleTimeString()}`;
+  document.getElementById('cardTempB').textContent=(+d.temperature).toFixed(1)+'°C';
+  document.getElementById('cardHumB').textContent=(+d.humidity).toFixed(1)+'%';
+  document.getElementById('cardCOB').textContent=(+d.co_ppm).toFixed(1)+' ppm';
+  document.getElementById('cardAQIB').textContent=d.estimated_aqi;
+  document.getElementById('cardRiskB').textContent=risk+'/100';
+  document.getElementById('cardRiskB').style.color=c;
+}
+
+// ═══════════════════════════════════════
+// DANGER ETA
+// ═══════════════════════════════════════
+function updateETA() {
+  const b=document.getElementById('etaBanner');
+  if(allData.length<3){b.style.display='none';return;}
+  const recent=allData.slice(-5).map(d=>d.co_ppm), latest=recent.at(-1);
+  if(latest>=95){b.style.display='none';return;}
+  const n=recent.length,xM=(n-1)/2,yM=recent.reduce((a,v)=>a+v,0)/n;
+  let num=0,den=0; recent.forEach((y,x)=>{num+=(x-xM)*(y-yM);den+=(x-xM)**2;});
+  const slope=den?num/den:0;
+  if(slope<=0){b.style.display='none';return;}
+  const secs=((95-latest)/slope)*10;
+  if(secs>600||secs<0){b.style.display='none';return;}
+  b.style.display='flex';
+  const m=Math.floor(secs/60),s=Math.round(secs%60);
+  document.getElementById('etaValue').textContent=m>0?`~${m}m ${s}s until CO unsafe`:`~${s}s until CO unsafe`;
+  document.getElementById('etaSub').textContent=`Current CO: ${latest.toFixed(1)} ppm · Rising ${slope.toFixed(2)} ppm/reading`;
+}
+
+// ═══════════════════════════════════════
+// PHONE POPUP
+// ═══════════════════════════════════════
+let popupCooldown=false;
+function triggerPopup(title,body) {
+  if(popupCooldown)return; popupCooldown=true; setTimeout(()=>popupCooldown=false,30000);
+  document.getElementById('popupTitle').textContent=title;
+  document.getElementById('popupBody').textContent=body;
+  document.getElementById('popupTime').textContent=new Date().toLocaleTimeString();
+  const p=document.getElementById('phonePopup');
+  p.classList.add('show'); setTimeout(()=>p.classList.remove('show'),7000);
+}
+
+// ═══════════════════════════════════════
+// AI CHAT
+// ═══════════════════════════════════════
+function sensorContext() {
+  const l=allData.at(-1);
+  if(!l)return 'No sensor data yet.';
+  return `Temp:${l.temperature}°C, Humidity:${l.humidity}%, CO:${l.co_ppm}ppm, AQI:${l.estimated_aqi}, Risk:${l.risk}/100`;
+}
+async function sendChat() {
+  const inp=document.getElementById('chatInput'), msg=inp.value.trim(); if(!msg)return;
+  inp.value=''; addMsg(msg,'user');
+  const ld=document.createElement('div'); ld.className='msg loading ai';
+  ld.innerHTML='<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+  document.getElementById('chatMessages').appendChild(ld); scrollChat();
+  try {
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,
+        system:`You are AirGuard AI. Give concise, actionable advice (2-4 sentences). Current readings: ${sensorContext()}`,
+        messages:[{role:'user',content:msg}]})
+    });
+    const d=await r.json(); ld.remove();
+    addMsg(d.content?.map(c=>c.text||'').join('')||'No response.','ai');
+  } catch(e){ld.remove();addMsg('AI unavailable. Check connection.','ai');}
+}
+function askQuick(q){document.getElementById('chatInput').value=q;sendChat();}
+function addMsg(text,type){const d=document.createElement('div');d.className=`msg ${type}`;d.textContent=text;document.getElementById('chatMessages').appendChild(d);scrollChat();}
+function scrollChat(){const c=document.getElementById('chatMessages');c.scrollTop=c.scrollHeight;}
+
+// ═══════════════════════════════════════
+// AI TREND REPORT
+// ═══════════════════════════════════════
+async function generateAIReport() {
+  if(allData.length<3){alert('Need at least 3 readings first.');return;}
+  const btn=document.getElementById('genReportBtn'); btn.disabled=true; btn.textContent='⏳ ANALYZING...';
+  const summary=allData.slice(-20).map((d,i)=>`[${i+1}] ${d.time}: T=${d.temperature}°C H=${d.humidity}% CO=${d.co_ppm}ppm AQI=${d.estimated_aqi} Risk=${d.risk}`).join('\n');
+  try {
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,
+        system:'Environmental health analyst. Write a 3-paragraph report: (1) trends, (2) anomalies, (3) health impact & recommendations. End with one word: SAFE, CAUTION, or DANGER.',
+        messages:[{role:'user',content:`Analyze readings from '${currentDevice}':\n${summary}`}]})
+    });
+    const d=await r.json(), txt=d.content?.map(c=>c.text||'').join('')||'Unavailable.';
+    document.getElementById('aiReportContent').innerHTML=`<div style="line-height:1.9;font-size:14px">${txt.replace(/\n\n/g,'</p><p style="margin-top:14px">').replace(/\n/g,'<br>')}</div>`;
+    const verdict=txt.match(/\b(SAFE|CAUTION|DANGER)\b/i)?.[0]?.toUpperCase()||'—';
+    const vc={SAFE:'var(--green)',CAUTION:'var(--yellow)',DANGER:'var(--red)'};
+    const cos=allData.map(d=>d.co_ppm);
+    document.getElementById('rTrend').textContent=cos.length>1?(cos.at(-1)-cos[0]>0?'📈 Rising':'📉 Falling'):'—';
+    const an=allData.filter(d=>d.co_ppm>95||d.estimated_aqi>100).length;
+    document.getElementById('rAnomalies').textContent=an+' detected';
+    document.getElementById('rAnomalies').style.color=an>0?'var(--yellow)':'var(--green)';
+    document.getElementById('rVerdict').textContent=verdict;
+    document.getElementById('rVerdict').style.color=vc[verdict]||'var(--cyan)';
+    document.getElementById('reportGrid').style.display='grid';
+  } catch(e){document.getElementById('aiReportContent').innerHTML='<div style="color:var(--muted)">AI unavailable.</div>';}
+  btn.disabled=false; btn.textContent='⚡ REGENERATE';
+}
+
+// ═══════════════════════════════════════
+// COMPARE
+// ═══════════════════════════════════════
+function getSnap(key) {
+  if(key==='esp32') {
+    const l=allData.at(-1); return l||null;
+  }
+  return roomSnaps[key]||null;
+}
+function renderCompare() {
+  const kA=document.getElementById('compareA').value, kB=document.getElementById('compareB').value;
+  const sA=getSnap(kA), sB=getSnap(kB);
+  document.getElementById('compareCardA').innerHTML=buildCompareCard(deviceNames[kA],sA,sB);
+  document.getElementById('compareCardB').innerHTML=buildCompareCard(deviceNames[kB],sB,sA);
+}
+function buildCompareCard(name,snap,other) {
+  if(!snap) return `<div class="compare-device-name">${name}</div><div style="color:var(--muted);font-size:13px;padding:8px">No data yet. Switch to this device first.</div>`;
+  const risk=snap.risk??calcRisk(snap.temperature,snap.humidity,snap.co_ppm,snap.estimated_aqi);
+  const oRisk=other?(other.risk??calcRisk(other.temperature,other.humidity,other.co_ppm,other.estimated_aqi)):null;
+  const metrics=[
+    {l:'Temperature',v:(+snap.temperature).toFixed(1),u:'°C', ov:other?(+other.temperature):null},
+    {l:'Humidity',   v:(+snap.humidity).toFixed(1),   u:'%',  ov:other?(+other.humidity):null},
+    {l:'CO Level',   v:(+snap.co_ppm).toFixed(1),    u:'ppm',ov:other?(+other.co_ppm):null},
+    {l:'AQI',        v:snap.estimated_aqi,            u:'',   ov:other?other.estimated_aqi:null},
+    {l:'Risk Score', v:risk,                          u:'/100',ov:oRisk}
+  ];
+  const rows=metrics.map(m=>{
+    let cls=''; if(m.ov!==null) cls=+m.v<=m.ov?'better':'worse';
+    return `<div class="compare-metric"><span class="compare-metric-name">${m.l}</span><span class="compare-metric-val ${cls}">${m.v}${m.u}</span></div>`;
+  }).join('');
+  return `<div class="compare-device-name"><div class="live-dot"></div>${name}</div>${rows}`;
+}
+setInterval(renderCompare, 10000);
+
+// ═══════════════════════════════════════
+// EXPORTS
+// ═══════════════════════════════════════
+function exportCSV() {
+  if(!allData.length){alert('No data yet.');return;}
+  const h=Object.keys(allData[0]).join(','), r=allData.map(d=>Object.values(d).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([h+'\n'+r],{type:'text/csv'}));
+  a.download=`airguard_${currentDevice}_${Date.now()}.csv`; a.click();
+}
+function exportJSON() {
+  if(!allData.length){alert('No data yet.');return;}
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify({device:currentDevice,data:allData},null,2)],{type:'application/json'}));
+  a.download=`airguard_${currentDevice}_${Date.now()}.json`; a.click();
+}
+function shareStatus() {
+  const l=allData.at(-1); if(!l){alert('No data yet.');return;}
+  const t=`AirGuard Report\nDevice: ${deviceNames[currentDevice]}\nTemp:${l.temperature}°C | Hum:${l.humidity}% | CO:${l.co_ppm}ppm | AQI:${l.estimated_aqi}\nRisk:${l.risk}/100`;
+  navigator.share?navigator.share({title:'AirGuard',text:t}):navigator.clipboard.writeText(t).then(()=>alert('Copied!'));
+}
+function copyBroadcast() {
+  const l=allData.at(-1); if(!l){alert('No data yet.');return;}
+  const t=`🌍 AIRGUARD PUBLIC SAFETY BROADCAST\nLocation: ${deviceNames[currentDevice]}\nTime: ${new Date().toLocaleString()}\nTemperature: ${l.temperature}°C | Humidity: ${l.humidity}%\nCO Level: ${l.co_ppm} ppm | AQI: ${l.estimated_aqi}\nRisk Score: ${l.risk}/100`;
+  navigator.clipboard.writeText(t).then(()=>alert('Broadcast copied!'));
+}
+function downloadCard() {
+  const c=document.getElementById('publicAlertCard'),w=window.open('','_blank');
+  w.document.write(`<html><head><style>body{background:#0a0a1a;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;font-family:sans-serif;color:white}</style></head><body>${c.outerHTML}</body></html>`);
+  w.document.close(); setTimeout(()=>w.print(),500);
+}
+
+// ═══════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════
+function switchTab(id,el) {
+  document.querySelectorAll('.ftab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.ftab-panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+id).classList.add('active');
+  if(id==='compare') renderCompare();
+}
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  startFirebase();   // start Firebase listener for esp32 (same as original)
+  initRooms();       // populate dummy rooms for floor map
+  renderCompare();   // initial compare render
+});
+</script>
+</body>
+</html>
