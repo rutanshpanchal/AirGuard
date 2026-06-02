@@ -1,0 +1,118 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <time.h>
+#include <DHT.h>
+
+#define DHTPIN 4
+#define DHTTYPE DHT22
+
+#define MQ7_PIN 35
+#define MQ135_PIN 32
+
+#define BUZZER_PIN 26
+#define LED_PIN 27
+
+DHT dht(DHTPIN, DHTTYPE);
+
+const char* ssid = "VIDHI";
+const char* password = "k8n34tna";
+
+const char* firebaseHost = "https://airguard02-default-rtdb.asia-southeast1.firebasedatabase.app/";
+
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 19800;
+
+String deviceID = "device_1";   // DEVICE ID ADDED
+
+float readAverage(int pin) {
+  long sum = 0;
+  for(int i=0;i<20;i++){
+    sum += analogRead(pin);
+    delay(10);
+  }
+  return sum / 20.0;
+}
+
+int calculateAQI(float co_ppm, float pollution_raw){
+  int coIndex = map(co_ppm, 0, 400, 0, 200);
+  int pollutionIndex = map(pollution_raw, 0, 4095, 0, 200);
+  return max(coIndex, pollutionIndex);
+}
+
+void setup() {
+
+  Serial.begin(115200);
+
+  WiFi.begin(ssid,password);
+  while(WiFi.status()!=WL_CONNECTED){
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected");
+
+  configTime(gmtOffset_sec,0,ntpServer);
+
+  dht.begin();
+
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
+}
+
+void loop() {
+
+  float mq7_raw = readAverage(MQ7_PIN);
+  float mq135_raw = readAverage(MQ135_PIN);
+
+  float co_ppm = (mq7_raw / 4095.0) * 400;
+
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  int aqi = calculateAQI(co_ppm, mq135_raw);
+
+  if(co_ppm > 95){
+    digitalWrite(LED_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
+  }
+  else{
+    digitalWrite(LED_PIN, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Time error");
+    delay(2000);
+    return;
+  }
+
+  char timeString[30];
+  strftime(timeString,sizeof(timeString),"%Y-%m-%d_%H-%M-%S",&timeinfo);
+
+  String url = String(firebaseHost) + "/devices/" + deviceID + "/logs/" + String(timeString) + ".json";
+
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Content-Type","application/json");
+
+  String json = "{";
+  json += "\"co_ppm\":" + String(co_ppm,2) + ",";
+  json += "\"air_quality_raw\":" + String(mq135_raw,2) + ",";
+  json += "\"temperature\":" + String(temperature,2) + ",";
+  json += "\"humidity\":" + String(humidity,2) + ",";
+  json += "\"estimated_aqi\":" + String(aqi);
+  json += "}";
+
+  int httpCode = http.PUT(json);
+
+  Serial.println("HTTP Code: " + String(httpCode));
+  Serial.println(json);
+
+  http.end();
+
+  delay(10000);
+}
